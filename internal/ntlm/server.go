@@ -230,7 +230,7 @@ func (s *Server) Authenticate(amsg []byte) (err error) {
 	}
 	encryptedRandomSessionKey := amsg[encryptedRandomSessionKeyBufferOffset : encryptedRandomSessionKeyBufferOffset+uint32(encryptedRandomSessionKeyLen)] // amsg.EncryptedRandomSessionKey
 
-	if len(userName) != 0 || len(ntChallengeResponse) != 0 {
+	if len(userName) != 0 && len(ntChallengeResponse) >= 16 {
 		user := utf16le.DecodeToString(userName)
 		if _, ok := s.accounts[user]; !ok && !s.allowGuest {
 			return errors.New("no such user " + user)
@@ -310,6 +310,17 @@ func (s *Server) Authenticate(amsg []byte) (err error) {
 
 		s.session = session
 
+		return nil
+	}
+
+	// Handle guest access when credentials are empty
+	if s.allowGuest && (len(userName) == 0 || len(ntChallengeResponse) < 16) {
+		session := new(Session)
+		session.isClientSide = false
+		session.user = "guest"
+		session.negotiateFlags = flags
+		session.exportedSessionKey = make([]byte, 16) // Empty key for guest
+		s.session = session
 		return nil
 	}
 
