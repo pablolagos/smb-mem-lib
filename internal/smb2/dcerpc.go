@@ -3,7 +3,7 @@ package smb2
 import (
 	"reflect"
 
-	"github.com/macos-fuse-t/go-smb2/internal/utf16le"
+	"github.com/pablolagos/smb-mem-lib/internal/utf16le"
 )
 
 // MSRPC Packet Types

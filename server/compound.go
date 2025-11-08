@@ -1,7 +1,7 @@
 package smb2
 
 import (
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
 )
 
 type compoundContext struct {

@@ -79,3 +79,47 @@ type NotifyEvent struct {
 	Handle VfsHandle
 	Name   string
 }
+
+// OperationContext contains metadata about the current operation
+type OperationContext struct {
+	// RemoteAddr is the IP address of the client making the request
+	RemoteAddr string
+	// LocalAddr is the server IP address
+	LocalAddr string
+	// SessionID is the SMB session identifier
+	SessionID uint64
+	// Username is the authenticated username (if available)
+	Username string
+}
+
+// WriteInterceptResult controls what happens after the write callback
+type WriteInterceptResult struct {
+	// Block prevents the write from being saved if true
+	Block bool
+	// Error if set, will be returned to the client instead of performing write
+	Error error
+}
+
+// WriteCallback is called before a file write operation is committed
+// Parameters:
+//   - ctx: Connection and session context
+//   - handle: VFS file handle
+//   - filename: Full path of the file being written
+//   - data: Content being written
+//   - offset: Offset in the file where data will be written
+//
+// Return: WriteInterceptResult to control the operation
+type WriteCallback func(ctx *OperationContext, handle VfsHandle, filename string, data []byte, offset uint64) WriteInterceptResult
+
+// VFSWithContext is an optional interface that VFS implementations can implement
+// to receive operation context and support callbacks
+type VFSWithContext interface {
+	VFSFileSystem
+
+	// SetOperationContext sets the context for subsequent operations
+	// This is called by the server before each operation
+	SetOperationContext(ctx *OperationContext)
+
+	// SetWriteCallback registers a callback to be invoked before writes
+	SetWriteCallback(callback WriteCallback)
+}

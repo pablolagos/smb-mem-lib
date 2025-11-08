@@ -1,6 +1,6 @@
 package smb2
 
-import "github.com/macos-fuse-t/go-smb2/internal/smb2"
+import "github.com/pablolagos/smb-mem-lib/internal/smb2"
 
 type SID_IDENTIFIER_AUTHORITY [6]byte
 

@@ -1,6 +1,6 @@
 package smb2
 
-import "github.com/macos-fuse-t/go-smb2/internal/utf16le"
+import "github.com/pablolagos/smb-mem-lib/internal/utf16le"
 
 // ----------------------------------------------------------------------------
 // SMB2 Error Response

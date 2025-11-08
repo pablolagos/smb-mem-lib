@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	. "github.com/macos-fuse-t/go-smb2/internal/erref"
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
-	"github.com/macos-fuse-t/go-smb2/vfs"
+	. "github.com/pablolagos/smb-mem-lib/internal/erref"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
+	"github.com/pablolagos/smb-mem-lib/vfs"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -716,6 +716,18 @@ func (t *fileTree) writeImpl(ctx *compoundContext, pkt []byte, fileId *FileId, o
 
 	res, _ := accept(SMB2_WRITE, pkt)
 	r := WriteRequestDecoder(res)
+
+	// Set operation context if VFS supports it
+	if fsWithCtx, ok := t.fs.(vfs.VFSWithContext); ok {
+		opCtx := &vfs.OperationContext{
+			RemoteAddr: c.t.RemoteAddr(),
+			LocalAddr:  c.t.LocalAddr(),
+			SessionID:  t.session.sessionId,
+			Username:   c.username,
+		}
+		fsWithCtx.SetOperationContext(opCtx)
+		defer fsWithCtx.SetOperationContext(nil) // Clean up after operation
+	}
 
 	if open.isEa {
 		log.Debugf("write ea: key %s, val %s", open.eaKey, r.Data())

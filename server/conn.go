@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	. "github.com/macos-fuse-t/go-smb2/internal/erref"
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
+	. "github.com/pablolagos/smb-mem-lib/internal/erref"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -95,6 +95,9 @@ type conn struct {
 	hashId                    uint16
 
 	account *account
+
+	// Authenticated username (if available)
+	username string
 
 	rdone chan struct{}
 	wdone chan struct{}

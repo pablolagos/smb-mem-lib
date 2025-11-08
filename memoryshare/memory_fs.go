@@ -1,4 +1,4 @@
-package main
+package memoryshare
 
 import (
 	"crypto/rand"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +53,17 @@ type MemoryFS struct {
 	openFiles sync.Map
 	nextInode uint64
 	mu        sync.RWMutex
+
+	// Write callback support
+	writeCallback vfs.WriteCallback
+	callbackMu    sync.RWMutex
+
+	// Operation context per goroutine
+	// Key: goroutine ID, Value: *vfs.OperationContext
+	contextMap sync.Map
+
+	// Honeypot mode: discard all writes/modifications
+	discardWrites bool
 }
 
 // NewMemoryFS creates a new in-memory file system
@@ -216,11 +229,9 @@ func randint64Memory() uint64 {
 	return uint64(binary.LittleEndian.Uint64(b[:]))
 }
 
-// nodeToAttributes converts a MemoryNode to vfs.Attributes
-func nodeToAttributes(node *MemoryNode) *vfs.Attributes {
-	node.mu.RLock()
-	defer node.mu.RUnlock()
-
+// nodeToAttributesLocked converts a MemoryNode to vfs.Attributes without acquiring lock
+// Caller must hold node.mu lock (read or write)
+func nodeToAttributesLocked(node *MemoryNode) *vfs.Attributes {
 	a := vfs.Attributes{}
 	a.SetInodeNumber(node.inode)
 	a.SetSizeBytes(node.size)
@@ -243,6 +254,13 @@ func nodeToAttributes(node *MemoryNode) *vfs.Attributes {
 	}
 
 	return &a
+}
+
+// nodeToAttributes converts a MemoryNode to vfs.Attributes
+func nodeToAttributes(node *MemoryNode) *vfs.Attributes {
+	node.mu.RLock()
+	defer node.mu.RUnlock()
+	return nodeToAttributesLocked(node)
 }
 
 // GetAttr implements vfs.VFSFileSystem
@@ -292,7 +310,7 @@ func (fs *MemoryFS) SetAttr(handle vfs.VfsHandle, a *vfs.Attributes) (*vfs.Attri
 		node.mode = mode
 	}
 
-	return nodeToAttributes(node), nil
+	return nodeToAttributesLocked(node), nil
 }
 
 // StatFS implements vfs.VFSFileSystem
@@ -465,6 +483,56 @@ func (fs *MemoryFS) Write(handle vfs.VfsHandle, buf []byte, offset uint64, flags
 	open := v.(*OpenMemoryFile)
 	node := open.node
 
+	// Check if we have a write callback (call it first, even in discard mode)
+	fs.callbackMu.RLock()
+	callback := fs.writeCallback
+	fs.callbackMu.RUnlock()
+
+	if callback != nil {
+		ctx := fs.getOperationContext()
+		// Make a copy of the data to pass to the callback
+		dataCopy := make([]byte, len(buf))
+		copy(dataCopy, buf)
+
+		// Call the callback before writing
+		result := callback(ctx, handle, open.path, dataCopy, offset)
+
+		// Check if callback returned an error
+		if result.Error != nil {
+			log.WithFields(log.Fields{
+				"path":       open.path,
+				"remoteAddr": ctx.RemoteAddr,
+				"error":      result.Error,
+			}).Warn("Write operation rejected by callback")
+			return 0, result.Error
+		}
+
+		// Check if we should block the write
+		if result.Block {
+			log.WithFields(log.Fields{
+				"path":       open.path,
+				"remoteAddr": ctx.RemoteAddr,
+				"size":       len(buf),
+				"offset":     offset,
+			}).Info("Write operation blocked by callback")
+			return len(buf), nil // Return success but don't actually write
+		}
+	}
+
+	// Check if discard writes is enabled (honeypot mode)
+	if fs.discardWrites {
+		ctx := fs.getOperationContext()
+		if ctx != nil {
+			log.WithFields(log.Fields{
+				"path":       open.path,
+				"remoteAddr": ctx.RemoteAddr,
+				"size":       len(buf),
+				"offset":     offset,
+			}).Info("Write operation discarded (honeypot mode)")
+		}
+		return len(buf), nil // Return success but don't write
+	}
+
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
@@ -585,6 +653,22 @@ func (fs *MemoryFS) Readlink(handle vfs.VfsHandle) (string, error) {
 
 // Unlink implements vfs.VFSFileSystem
 func (fs *MemoryFS) Unlink(handle vfs.VfsHandle) error {
+	// Check if discard writes is enabled (honeypot mode)
+	if fs.discardWrites {
+		ctx := fs.getOperationContext()
+		if ctx != nil {
+			v, ok := fs.openFiles.Load(handle)
+			if ok {
+				open := v.(*OpenMemoryFile)
+				log.WithFields(log.Fields{
+					"path":       open.path,
+					"remoteAddr": ctx.RemoteAddr,
+				}).Info("Unlink operation discarded (honeypot mode)")
+			}
+		}
+		return nil // Return success but don't delete
+	}
+
 	v, ok := fs.openFiles.Load(handle)
 	if !ok {
 		return fmt.Errorf("invalid handle")
@@ -605,6 +689,23 @@ func (fs *MemoryFS) Unlink(handle vfs.VfsHandle) error {
 
 // Truncate implements vfs.VFSFileSystem
 func (fs *MemoryFS) Truncate(handle vfs.VfsHandle, size uint64) error {
+	// Check if discard writes is enabled (honeypot mode)
+	if fs.discardWrites {
+		ctx := fs.getOperationContext()
+		if ctx != nil {
+			v, ok := fs.openFiles.Load(handle)
+			if ok {
+				open := v.(*OpenMemoryFile)
+				log.WithFields(log.Fields{
+					"path":       open.path,
+					"size":       size,
+					"remoteAddr": ctx.RemoteAddr,
+				}).Info("Truncate operation discarded (honeypot mode)")
+			}
+		}
+		return nil // Return success but don't truncate
+	}
+
 	v, ok := fs.openFiles.Load(handle)
 	if !ok {
 		return fmt.Errorf("invalid handle")
@@ -634,6 +735,23 @@ func (fs *MemoryFS) Truncate(handle vfs.VfsHandle, size uint64) error {
 
 // Rename implements vfs.VFSFileSystem
 func (fs *MemoryFS) Rename(fromHandle vfs.VfsHandle, toPath string, flags int) error {
+	// Check if discard writes is enabled (honeypot mode)
+	if fs.discardWrites {
+		ctx := fs.getOperationContext()
+		if ctx != nil {
+			v, ok := fs.openFiles.Load(fromHandle)
+			if ok {
+				open := v.(*OpenMemoryFile)
+				log.WithFields(log.Fields{
+					"from":       open.path,
+					"to":         toPath,
+					"remoteAddr": ctx.RemoteAddr,
+				}).Info("Rename operation discarded (honeypot mode)")
+			}
+		}
+		return nil // Return success but don't rename
+	}
+
 	v, ok := fs.openFiles.Load(fromHandle)
 	if !ok {
 		return fmt.Errorf("invalid handle")
@@ -664,9 +782,15 @@ func (fs *MemoryFS) Rename(fromHandle vfs.VfsHandle, toPath string, flags int) e
 
 	// Remove from old parent
 	if node.parent != nil {
-		node.parent.mu.Lock()
-		delete(node.parent.children, node.name)
-		node.parent.mu.Unlock()
+		// Only lock if it's a different parent to avoid deadlock
+		if node.parent != toParentNode {
+			node.parent.mu.Lock()
+			delete(node.parent.children, node.name)
+			node.parent.mu.Unlock()
+		} else {
+			// Same parent, already locked
+			delete(node.parent.children, node.name)
+		}
 	}
 
 	// Add to new parent
@@ -747,6 +871,23 @@ func (fs *MemoryFS) Getxattr(handle vfs.VfsHandle, key string, val []byte) (int,
 
 // Setxattr implements vfs.VFSFileSystem
 func (fs *MemoryFS) Setxattr(handle vfs.VfsHandle, key string, val []byte) error {
+	// Check if discard writes is enabled (honeypot mode)
+	if fs.discardWrites {
+		ctx := fs.getOperationContext()
+		if ctx != nil {
+			v, ok := fs.openFiles.Load(handle)
+			if ok {
+				open := v.(*OpenMemoryFile)
+				log.WithFields(log.Fields{
+					"path":       open.path,
+					"key":        key,
+					"remoteAddr": ctx.RemoteAddr,
+				}).Debug("Setxattr operation discarded (honeypot mode)")
+			}
+		}
+		return nil // Return success but don't set
+	}
+
 	v, ok := fs.openFiles.Load(handle)
 	if !ok {
 		return fmt.Errorf("invalid handle")
@@ -781,4 +922,45 @@ func (fs *MemoryFS) Removexattr(handle vfs.VfsHandle, key string) error {
 
 	delete(node.xattrs, key)
 	return nil
+}
+
+// getGoroutineID returns the current goroutine ID
+func getGoroutineID() uint64 {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	// Format is "goroutine 123 [running]:"
+	// Extract the number after "goroutine "
+	idField := strings.Fields(string(buf[:n]))[1]
+	id, _ := strconv.ParseUint(idField, 10, 64)
+	return id
+}
+
+// SetOperationContext implements vfs.VFSWithContext
+func (fs *MemoryFS) SetOperationContext(ctx *vfs.OperationContext) {
+	if ctx == nil {
+		fs.contextMap.Delete(getGoroutineID())
+	} else {
+		fs.contextMap.Store(getGoroutineID(), ctx)
+	}
+}
+
+// SetWriteCallback implements vfs.VFSWithContext
+func (fs *MemoryFS) SetWriteCallback(callback vfs.WriteCallback) {
+	fs.callbackMu.Lock()
+	defer fs.callbackMu.Unlock()
+	fs.writeCallback = callback
+}
+
+// getOperationContext retrieves the context for the current goroutine
+func (fs *MemoryFS) getOperationContext() *vfs.OperationContext {
+	if v, ok := fs.contextMap.Load(getGoroutineID()); ok {
+		return v.(*vfs.OperationContext)
+	}
+	return nil
+}
+
+// SetDiscardWrites enables or disables honeypot mode where all write operations
+// are silently discarded without returning errors to the client.
+func (fs *MemoryFS) SetDiscardWrites(discard bool) {
+	fs.discardWrites = discard
 }

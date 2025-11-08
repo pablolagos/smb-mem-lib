@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/macos-fuse-t/go-smb2/internal/crypto/ccm"
-	"github.com/macos-fuse-t/go-smb2/internal/crypto/cmac"
-	. "github.com/macos-fuse-t/go-smb2/internal/erref"
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
-	"github.com/macos-fuse-t/go-smb2/vfs"
+	"github.com/pablolagos/smb-mem-lib/internal/crypto/ccm"
+	"github.com/pablolagos/smb-mem-lib/internal/crypto/cmac"
+	. "github.com/pablolagos/smb-mem-lib/internal/erref"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
+	"github.com/pablolagos/smb-mem-lib/vfs"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/maps"
 )

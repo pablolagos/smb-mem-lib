@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macos-fuse-t/go-smb2/internal/smb2"
-	"github.com/macos-fuse-t/go-smb2/internal/utf16le"
+	"github.com/pablolagos/smb-mem-lib/internal/smb2"
+	"github.com/pablolagos/smb-mem-lib/internal/utf16le"
 )
 
 // NTLM v2 server

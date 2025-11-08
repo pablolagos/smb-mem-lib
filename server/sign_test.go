@@ -5,9 +5,9 @@ import (
 	"crypto/aes"
 	"encoding/hex"
 
-	"github.com/macos-fuse-t/go-smb2/internal/crypto/cmac"
+	"github.com/pablolagos/smb-mem-lib/internal/crypto/cmac"
 
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
 
 	"testing"
 )

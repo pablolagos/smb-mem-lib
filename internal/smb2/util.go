@@ -10,7 +10,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/macos-fuse-t/go-smb2/vfs"
+	"github.com/pablolagos/smb-mem-lib/vfs"
 )
 
 var (

@@ -3,8 +3,8 @@ package smb2
 import (
 	"reflect"
 
-	. "github.com/macos-fuse-t/go-smb2/internal/erref"
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
+	. "github.com/pablolagos/smb-mem-lib/internal/erref"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
 	log "github.com/sirupsen/logrus"
 )
 

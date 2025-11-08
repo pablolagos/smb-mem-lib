@@ -3,8 +3,8 @@ package smb2
 import (
 	"encoding/asn1"
 
-	"github.com/macos-fuse-t/go-smb2/internal/ntlm"
-	"github.com/macos-fuse-t/go-smb2/internal/spnego"
+	"github.com/pablolagos/smb-mem-lib/internal/ntlm"
+	"github.com/pablolagos/smb-mem-lib/internal/spnego"
 )
 
 type Authenticator interface {

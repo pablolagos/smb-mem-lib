@@ -19,6 +19,8 @@ type transport interface {
 	ReadSize() (size int, err error)
 	Read(p []byte) (n int, err error)
 	Close() error
+	RemoteAddr() string
+	LocalAddr() string
 }
 
 type directTCP struct {
@@ -79,4 +81,18 @@ func (t *directTCP) Read(p []byte) (n int, err error) {
 
 func (t *directTCP) Close() error {
 	return t.conn.Close()
+}
+
+func (t *directTCP) RemoteAddr() string {
+	if t.conn != nil {
+		return t.conn.RemoteAddr().String()
+	}
+	return ""
+}
+
+func (t *directTCP) LocalAddr() string {
+	if t.conn != nil {
+		return t.conn.LocalAddr().String()
+	}
+	return ""
 }

@@ -6,7 +6,7 @@ import (
 	"hash"
 	"math/rand"
 
-	. "github.com/macos-fuse-t/go-smb2/internal/smb2"
+	. "github.com/pablolagos/smb-mem-lib/internal/smb2"
 )
 
 var zero [16]byte

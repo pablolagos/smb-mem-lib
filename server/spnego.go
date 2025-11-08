@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/macos-fuse-t/go-smb2/internal/spnego"
+	"github.com/pablolagos/smb-mem-lib/internal/spnego"
 )
 
 type spnegoServer struct {

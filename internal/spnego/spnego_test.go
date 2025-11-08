@@ -63,7 +63,7 @@ var testDecodeNegTokenResp = []struct {
 		},
 	},
 	{
-		"a182000b30820007a08200030a0100", // ber encoding (see https://github.com/macos-fuse-t/go-smb2/pull/34)
+		"a182000b30820007a08200030a0100", // ber encoding (see https://github.com/pablolagos/smb-mem-lib/pull/34)
 		"",
 		&NegTokenResp{
 			NegState: 0,

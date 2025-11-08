@@ -9,7 +9,7 @@ import (
 
 	"testing"
 
-	"github.com/macos-fuse-t/go-smb2/internal/utf16le"
+	"github.com/pablolagos/smb-mem-lib/internal/utf16le"
 )
 
 func TestNtowfv2(t *testing.T) {

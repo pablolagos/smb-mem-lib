@@ -12,8 +12,8 @@ import (
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/macos-fuse-t/go-smb2/stats"
-	"github.com/macos-fuse-t/go-smb2/vfs"
+	"github.com/pablolagos/smb-mem-lib/stats"
+	"github.com/pablolagos/smb-mem-lib/vfs"
 	"github.com/pkg/xattr"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"

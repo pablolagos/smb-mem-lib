@@ -1,4 +1,4 @@
-module github.com/macos-fuse-t/go-smb2
+module github.com/pablolagos/smb-mem-lib
 
 go 1.18
 
