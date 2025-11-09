@@ -12,6 +12,27 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// SimpleLogger is a minimal logging interface that users can implement
+// to provide custom logging for the SMB server
+type SimpleLogger interface {
+	Printf(format string, args ...interface{})
+	Print(args ...interface{})
+}
+
+// noOpLogger is a logger that discards all output
+type noOpLogger struct{}
+
+func (n *noOpLogger) Printf(format string, args ...interface{}) {}
+func (n *noOpLogger) Print(args ...interface{})                 {}
+
+// NoOpLogger is a logger that discards all output. Use this to disable logging:
+//
+//	share, err := memoryshare.New(memoryshare.Options{
+//	    Logger: &memoryshare.NoOpLogger{},
+//	    ...
+//	})
+var NoOpLogger = &noOpLogger{}
+
 // Options configures the MemoryShare SMB server
 type Options struct {
 	// Port is the TCP port to listen on (e.g., 445, 8082)
@@ -55,6 +76,31 @@ type Options struct {
 	// Perfect for honeypot mode where you want to deceive attackers.
 	// The server will pretend operations succeeded but nothing is actually saved.
 	DiscardWrites bool
+
+	// Logger is a custom logger implementation. If provided, all logging
+	// will go through this logger instead of the default logrus logger.
+	// The logger must implement the SimpleLogger interface (Printf and Print methods).
+	Logger SimpleLogger
+
+	// MaxGhostFilesPerSession limits the number of ghost files per session (default: 3)
+	// Ghost files are temporary files kept in memory after closing in honeypot mode.
+	// This is the PRIMARY limit for controlling actual memory usage.
+	// REAL memory: ~330 bytes per file. For 1000 sessions: 1000 × 3 × 330 ≈ 1MB RAM
+	MaxGhostFilesPerSession int
+
+	// MaxGhostMemoryPerSession limits VIRTUAL file size per session in bytes (default: 10MB)
+	// NOTE: In honeypot mode, file CONTENT is NOT stored, only metadata.
+	// This tracks the virtual/pretend size of files to limit attacker engagement,
+	// NOT actual RAM usage. Real RAM per file is only ~330 bytes.
+	// When exceeded, oldest files are evicted using LRU policy.
+	MaxGhostMemoryPerSession int64
+
+	// MaxGhostMemoryGlobal limits total VIRTUAL file size across all sessions (default: 1GB)
+	// NOTE: Tracks virtual size, not real RAM. Real RAM is minimal (~330 bytes per file).
+	// For 1000 sessions with 3 files each: ~1MB real RAM, but can track 1GB virtual size.
+	// This prevents one attacker from monopolizing the honeypot by "filling" it virtually.
+	// When exceeded, oldest files across ALL sessions are evicted.
+	MaxGhostMemoryGlobal int64
 }
 
 // MemoryShare represents an in-memory SMB2/3 server
@@ -63,6 +109,7 @@ type MemoryShare struct {
 	fs     *MemoryFS
 	opts   Options
 	stopCh chan os.Signal
+	logger SimpleLogger
 }
 
 // New creates a new MemoryShare instance with the provided options
@@ -102,16 +149,37 @@ func New(opts Options) (*MemoryShare, error) {
 		// Same as above
 	}
 
+	// Ghost files defaults for honeypot mode
+	if opts.MaxGhostFilesPerSession == 0 {
+		opts.MaxGhostFilesPerSession = 3
+	}
+	if opts.MaxGhostMemoryPerSession == 0 {
+		opts.MaxGhostMemoryPerSession = 10 * 1024 * 1024 // 10MB virtual size
+	}
+	if opts.MaxGhostMemoryGlobal == 0 {
+		opts.MaxGhostMemoryGlobal = 1024 * 1024 * 1024 // 1GB virtual size
+	}
+
 	// Initialize logging
-	initLogs(&opts)
+	logger := initLogs(&opts)
 
 	// Create in-memory filesystem
 	memFS := NewMemoryFS()
+	memFS.SetLogger(logger)
+
+	// Configure ghost file limits
+	memFS.SetGhostFileLimits(
+		opts.MaxGhostFilesPerSession,
+		opts.MaxGhostMemoryPerSession,
+		opts.MaxGhostMemoryGlobal,
+	)
 
 	// Enable discard writes mode if requested (honeypot mode)
 	if opts.DiscardWrites {
 		memFS.SetDiscardWrites(true)
-		log.Infof("DiscardWrites mode enabled - all write operations will be discarded")
+		logger.Printf("DiscardWrites mode enabled - all write operations will be discarded")
+		logger.Printf("Ghost file limits: %d files/session, %d bytes virtual/session, %d bytes virtual global",
+			opts.MaxGhostFilesPerSession, opts.MaxGhostMemoryPerSession, opts.MaxGhostMemoryGlobal)
 	}
 
 	// Create SMB server
@@ -139,6 +207,7 @@ func New(opts Options) (*MemoryShare, error) {
 		fs:     memFS,
 		opts:   opts,
 		stopCh: make(chan os.Signal, 1),
+		logger: logger,
 	}, nil
 }
 
@@ -147,14 +216,14 @@ func New(opts Options) (*MemoryShare, error) {
 func (ms *MemoryShare) Serve() error {
 	addr := fmt.Sprintf("%s:%d", ms.opts.Address, ms.opts.Port)
 
-	log.Infof("Starting MemoryShare SMB server at %s", addr)
-	log.Infof("Share name: %s", ms.opts.ShareName)
-	log.Infof("Guest access: %v", ms.opts.AllowGuest)
+	ms.logger.Printf("Starting MemoryShare SMB server at %s", addr)
+	ms.logger.Printf("Share name: %s", ms.opts.ShareName)
+	ms.logger.Printf("Guest access: %v", ms.opts.AllowGuest)
 
 	// Start Bonjour advertisement if enabled
 	if ms.opts.Advertise {
 		go bonjour.Advertise(addr, ms.opts.Hostname, ms.opts.Hostname, ms.opts.ShareName, true)
-		log.Infof("Bonjour advertisement enabled")
+		ms.logger.Printf("Bonjour advertisement enabled")
 	}
 
 	// Start server in goroutine
@@ -171,14 +240,14 @@ func (ms *MemoryShare) Serve() error {
 	case err := <-errCh:
 		return err
 	case <-ms.stopCh:
-		log.Infof("Received interrupt signal, shutting down...")
+		ms.logger.Printf("Received interrupt signal, shutting down...")
 		return ms.Shutdown()
 	}
 }
 
 // Shutdown gracefully stops the SMB server
 func (ms *MemoryShare) Shutdown() error {
-	log.Infof("Shutting down MemoryShare server")
+	ms.logger.Printf("Shutting down MemoryShare server")
 
 	if ms.opts.Advertise {
 		bonjour.Shutdown()
@@ -234,19 +303,87 @@ func (ms *MemoryShare) SetWriteCallback(callback vfs.WriteCallback) {
 	ms.fs.SetWriteCallback(callback)
 }
 
-// initLogs configures the logging system
-func initLogs(opts *Options) {
+// SetCreateCallback registers a callback function that will be invoked before
+// any file or directory creation operation. This is useful for honeypots, malware analysis,
+// or security monitoring where you want to intercept and potentially block file creation.
+//
+// The callback receives:
+//   - ctx: Connection context including client IP, username, etc.
+//   - filepath: Full path of the file/directory being created
+//   - isDir: True if creating a directory, false if creating a file
+//   - mode: Unix permissions mode
+//
+// The callback should return a CreateInterceptResult to control the operation:
+//   - Block: If true, the creation is prevented (but can still appear successful to the client)
+//   - Error: If set, this error is returned to the client
+func (ms *MemoryShare) SetCreateCallback(callback vfs.CreateCallback) {
+	ms.fs.SetCreateCallback(callback)
+}
+
+// SetRenameCallback registers a callback function that will be invoked before
+// any file or directory rename/move operation. This is useful for honeypots, malware analysis,
+// or security monitoring where you want to intercept and potentially block renames.
+//
+// The callback receives:
+//   - ctx: Connection context including client IP, username, etc.
+//   - fromPath: Original path of the file/directory
+//   - toPath: New path (destination) for the file/directory
+//
+// The callback should return a RenameInterceptResult to control the operation:
+//   - Block: If true, the rename is prevented (but can still appear successful to the client)
+//   - Error: If set, this error is returned to the client
+func (ms *MemoryShare) SetRenameCallback(callback vfs.RenameCallback) {
+	ms.fs.SetRenameCallback(callback)
+}
+
+// GetGhostFileStats returns current statistics about ghost files in honeypot mode.
+// Useful for monitoring resource usage and detecting attack patterns.
+//
+// Returns GhostFileStats with:
+//   - TotalFiles: Count of all ghost files across sessions
+//   - ActiveSessions: Number of sessions with ghost files
+//   - VirtualMemoryTotal/Limit: Virtual size being tracked (not real RAM)
+//   - RealMemoryEstimate: Actual RAM usage (~330 bytes/file)
+//   - SessionFileCounts: Files per session
+//   - SessionVirtualMemory: Virtual size per session
+func (ms *MemoryShare) GetGhostFileStats() GhostFileStats {
+	return ms.fs.GetGhostFileStats()
+}
+
+// logrusAdapter wraps logrus to implement SimpleLogger interface
+type logrusAdapter struct {
+	logger *log.Logger
+}
+
+func (l *logrusAdapter) Printf(format string, args ...interface{}) {
+	l.logger.Infof(format, args...)
+}
+
+func (l *logrusAdapter) Print(args ...interface{}) {
+	l.logger.Info(args...)
+}
+
+// initLogs configures the logging system and returns a SimpleLogger
+func initLogs(opts *Options) SimpleLogger {
+	// If a custom logger is provided, use it directly
+	if opts.Logger != nil {
+		return opts.Logger
+	}
+
+	// Otherwise, configure and use logrus
+	logrusLogger := log.New()
+
 	if opts.Debug {
-		log.SetLevel(log.DebugLevel)
-		log.Infof("Debug logging enabled")
+		logrusLogger.SetLevel(log.DebugLevel)
+		logrusLogger.Infof("Debug logging enabled")
 	} else {
-		log.SetLevel(log.InfoLevel)
+		logrusLogger.SetLevel(log.InfoLevel)
 	}
 
 	if opts.Console {
-		log.SetOutput(os.Stdout)
+		logrusLogger.SetOutput(os.Stdout)
 	} else {
-		log.SetOutput(&lumberjack.Logger{
+		logrusLogger.SetOutput(&lumberjack.Logger{
 			Filename:   opts.LogFile,
 			MaxSize:    100, // megabytes
 			MaxBackups: 3,
@@ -254,4 +391,6 @@ func initLogs(opts *Options) {
 			Compress:   true,
 		})
 	}
+
+	return &logrusAdapter{logger: logrusLogger}
 }

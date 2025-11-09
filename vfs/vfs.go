@@ -111,6 +111,41 @@ type WriteInterceptResult struct {
 // Return: WriteInterceptResult to control the operation
 type WriteCallback func(ctx *OperationContext, handle VfsHandle, filename string, data []byte, offset uint64) WriteInterceptResult
 
+// CreateInterceptResult controls what happens after the create callback
+type CreateInterceptResult struct {
+	// Block prevents the file creation if true
+	Block bool
+	// Error if set, will be returned to the client instead of creating the file
+	Error error
+}
+
+// CreateCallback is called when a file or directory is being created
+// Parameters:
+//   - ctx: Connection and session context
+//   - filepath: Full path of the file/directory being created
+//   - isDir: True if creating a directory, false if creating a file
+//   - mode: Unix permissions mode
+//
+// Return: CreateInterceptResult to control the operation
+type CreateCallback func(ctx *OperationContext, filepath string, isDir bool, mode int) CreateInterceptResult
+
+// RenameInterceptResult controls what happens after the rename callback
+type RenameInterceptResult struct {
+	// Block prevents the rename/move operation if true
+	Block bool
+	// Error if set, will be returned to the client instead of performing the rename
+	Error error
+}
+
+// RenameCallback is called when a file or directory is being renamed or moved
+// Parameters:
+//   - ctx: Connection and session context
+//   - fromPath: Original path of the file/directory
+//   - toPath: New path (destination) for the file/directory
+//
+// Return: RenameInterceptResult to control the operation
+type RenameCallback func(ctx *OperationContext, fromPath string, toPath string) RenameInterceptResult
+
 // VFSWithContext is an optional interface that VFS implementations can implement
 // to receive operation context and support callbacks
 type VFSWithContext interface {
@@ -122,4 +157,10 @@ type VFSWithContext interface {
 
 	// SetWriteCallback registers a callback to be invoked before writes
 	SetWriteCallback(callback WriteCallback)
+
+	// SetCreateCallback registers a callback to be invoked before file/directory creation
+	SetCreateCallback(callback CreateCallback)
+
+	// SetRenameCallback registers a callback to be invoked before rename/move operations
+	SetRenameCallback(callback RenameCallback)
 }
