@@ -14,7 +14,7 @@ A lightweight, high-performance Go library for creating SMB2/3 honeypots designe
 - **Real-time Monitoring**: Built-in statistics for detection and analysis
 - **Zero Dependencies**: Pure Go implementation, easy to integrate
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -61,7 +61,7 @@ func main() {
 smbclient //127.0.0.1/HoneypotShare -p 8445 -N
 ```
 
-## 📊 Scalability & Performance
+## Scalability & Performance
 
 ### Memory Usage (Honeypot Mode)
 
@@ -117,7 +117,7 @@ memoryshare.Options{
 // Real RAM: ~6.6 MB
 ```
 
-## 🔍 Ransomware Detection
+## Ransomware Detection
 
 ### Behavioral Callbacks
 
@@ -235,7 +235,7 @@ Real RAM used: 41.91 KB
   ...
 ```
 
-## 🎛️ Configuration Options
+## Configuration Options
 
 ### Complete Options Reference
 
@@ -301,7 +301,7 @@ share, _ := memoryshare.New(memoryshare.Options{
 })
 ```
 
-## 📁 Examples
+## Examples
 
 See the `examples/` directory for complete working examples:
 
@@ -321,7 +321,7 @@ cd examples/custom-logger
 go run main.go
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ### Components
 
@@ -375,7 +375,7 @@ Session 1                     Session 2
 3. **Time-based expiration**: Files older than 3 minutes
 4. **Cleanup interval**: Every 30 seconds
 
-## 🔒 Security Considerations
+## Security Considerations
 
 ### Honeypot Best Practices
 
@@ -404,7 +404,7 @@ share, _ := memoryshare.New(memoryshare.Options{
 })
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -420,7 +420,7 @@ go test ./memoryshare -cover
 go test ./memoryshare -short
 ```
 
-## 📚 API Reference
+## API Reference
 
 ### MemoryShare Methods
 
@@ -480,15 +480,7 @@ type OperationContext struct {
 }
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please ensure:
-
-1. Tests pass: `go test ./...`
-2. Code is formatted: `go fmt ./...`
-3. No linting errors: `golangci-lint run`
-
-## 📝 License
+## License
 
 Dual licensed:
 - **AGPL-3.0** for open source use
@@ -496,13 +488,12 @@ Dual licensed:
 
 Contact for commercial licensing options.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - SMB2/3 protocol implementation based on community research
 - Inspired by real-world ransomware behavior analysis
-- Built for the cybersecurity community
 
-## 📞 Support
+## Support
 
 - Issues: [GitHub Issues](https://github.com/pablolagos/smb-mem-lib/issues)
 - Discussions: [GitHub Discussions](https://github.com/pablolagos/smb-mem-lib/discussions)
