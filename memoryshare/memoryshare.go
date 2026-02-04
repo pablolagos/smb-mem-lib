@@ -50,6 +50,10 @@ type Options struct {
 	// AllowGuest enables guest access without authentication (default: false)
 	AllowGuest bool
 
+	// UserPassword maps usernames to their respective passwords for authentication (default: empty).
+	// Keep empty for guest-only access.
+	UserPassword map[string]string
+
 	// Advertise enables Bonjour/mDNS advertisement for macOS discovery (default: true)
 	Advertise bool
 
@@ -137,6 +141,9 @@ func New(opts Options) (*MemoryShare, error) {
 		homeDir, _ := os.UserHomeDir()
 		opts.LogFile = homeDir + "/smb2-go.log"
 	}
+	if opts.UserPassword == nil {
+		opts.UserPassword = map[string]string{} // Empty for guest-only access
+	}
 
 	// Advertise defaults to true
 	if !opts.Advertise {
@@ -196,7 +203,7 @@ func New(opts Options) (*MemoryShare, error) {
 			NbName:       opts.Hostname,
 			DnsName:      opts.Hostname + ".local",
 			DnsDomain:    ".local",
-			UserPassword: map[string]string{}, // Empty for guest-only access
+			UserPassword: opts.UserPassword,
 			AllowGuest:   opts.AllowGuest,
 		},
 		map[string]vfs.VFSFileSystem{opts.ShareName: memFS},
